@@ -72,6 +72,9 @@ ZxingcppDecodeObjCmd(ClientData unused, Tcl_Interp *interp,
     Tcl_WideInt tw[2], td;
     Tcl_Obj **elems;
     Tcl_Obj *resultList;
+    Tcl_Encoding utf8Encoding;
+    Tcl_DString recode;
+
 
     if ((objc < 2) || (objc > 3)) {
 	Tcl_WrongNumArgs(interp, 1, objv, "photoEtc ?syms?");
@@ -285,6 +288,10 @@ ZxingcppDecodeObjCmd(ClientData unused, Tcl_Interp *interp,
      * Loop over read bar codes
      */
     
+    utf8Encoding = Tcl_GetEncoding(interp, "utf-8"); 
+    Tcl_DStringInit(&recode);
+
+    
     for (int i = 0, n = ZXing_Barcodes_size(barcodes); i < n; ++i) {
 
 	Tcl_Obj * resultDict = Tcl_NewDictObj();
@@ -296,8 +303,11 @@ ZxingcppDecodeObjCmd(ClientData unused, Tcl_Interp *interp,
 	 * Build a dict with the result keys
 	 */
 	
+	Tcl_DStringAppend(&recode, ZXing_Barcode_text(barcode), -1);
+	Tcl_ExternalToUtfDString(utf8Encoding, ZXing_Barcode_text(barcode), -1, &recode); 
 	Tcl_DictObjPut(interp, resultDict, Tcl_NewStringObj("text",-1),
-		Tcl_NewStringObj(ZXing_Barcode_text(barcode), -1));
+		Tcl_NewStringObj(Tcl_DStringValue (&recode), Tcl_DStringLength (&recode)));
+	Tcl_DStringFree(&recode);
 
 	bytePtr=ZXing_Barcode_bytes(barcode, &len);
 	Tcl_DictObjPut(interp, resultDict, Tcl_NewStringObj("bytes",-1),
@@ -378,6 +388,9 @@ ZxingcppDecodeObjCmd(ClientData unused, Tcl_Interp *interp,
     }
 
     ZXing_Barcodes_delete(barcodes);
+    
+    Tcl_FreeEncoding(utf8Encoding);
+    Tcl_DStringFree(&recode);
    
     /*
      * Return list of result dicts
