@@ -36,6 +36,32 @@
 #endif  /* __cplusplus */
 
 /*
+ *----------------------------------------------------------------------
+ * Check availability of Tk.
+ *----------------------------------------------------------------------
+ */
+static int CheckForTk(Tcl_Interp *interp, int *tkFlagPtr)
+{
+    if (*tkFlagPtr > 0) {
+        return TCL_OK;
+    }
+    if (*tkFlagPtr == 0) {
+        if ( ! Tcl_PkgPresent(interp, "Tk", "8.5-10", 0) ) {
+            Tcl_SetResult(interp, "package Tk not loaded", TCL_STATIC);
+            return TCL_ERROR;
+        }
+    }
+#ifdef USE_TK_STUBS
+    if (*tkFlagPtr < 0 || Tk_InitStubs(interp, "8.5-10", 0) == NULL) {
+        *tkFlagPtr = -1;
+        Tcl_SetResult(interp, "error initializing Tk", TCL_STATIC);
+        return TCL_ERROR;
+    }
+#endif
+    *tkFlagPtr = 1;
+    return TCL_OK;
+}
+/*
  *-------------------------------------------------------------------------
  *
  * ZxingcppDecodeObjCmd --
@@ -58,7 +84,7 @@
  */
 
 static int
-ZxingcppDecodeObjCmd(ClientData unused, Tcl_Interp *interp,
+ZxingcppDecodeObjCmd(ClientData tkFlagPtr, Tcl_Interp *interp,
 	int objc,  Tcl_Obj *const objv[])
 {
     Tk_PhotoImageBlock block;
@@ -96,7 +122,7 @@ ZxingcppDecodeObjCmd(ClientData unused, Tcl_Interp *interp,
 	    (Tcl_GetIntFromObj(interp, elems[2], &bpp) != TCL_OK)) {
 	    return TCL_ERROR;
 	}
-	if ((bpp != 1) || (bpp != 3)) {
+	if (!(bpp == 1 || bpp == 3)) {
 	    Tcl_SetResult(interp, "unsupported image depth", TCL_STATIC);
 	    return TCL_ERROR;
 	}
@@ -110,12 +136,26 @@ ZxingcppDecodeObjCmd(ClientData unused, Tcl_Interp *interp,
 	    Tcl_SetResult(interp, "malformed image", TCL_STATIC);
 	    return TCL_ERROR;
 	}
-    } else {
-#ifdef ZXINGCPP_NO_TK
+	if (bpp == 1) {
+	    block.offset[0] = 0;
+	    block.offset[1] = 0;
+	    block.offset[2] = 0;
+	    block.offset[3] = -1;
+	    block.pitch = block.width;
+	    block.pixelSize = 1;
+	} else {
+	    block.offset[0] = 0;
+	    block.offset[1] = 1;
+	    block.offset[2] = 2;
+	    block.offset[3] = -1;
+	    block.pitch = block.width * 3;
+	    block.pixelSize = 3;
+	}
+    } else if (CheckForTk(interp, (int *)tkFlagPtr) != TCL_OK) {
 	Tcl_SetResult(interp, "need list of width, height, bpp, bytes",
 		      TCL_STATIC);
 	return TCL_ERROR;
-#else
+    } else {
 	Tk_PhotoHandle handle;
 
 	handle = Tk_FindPhoto(interp, Tcl_GetString(objv[1]));
@@ -128,7 +168,6 @@ ZxingcppDecodeObjCmd(ClientData unused, Tcl_Interp *interp,
 	    Tcl_SetResult(interp, "error retrieving photo image", TCL_STATIC);
 	    return TCL_ERROR;
 	}
-#endif
     }
 
     /*
@@ -399,6 +438,14 @@ ZxingcppDecodeObjCmd(ClientData unused, Tcl_Interp *interp,
     Tcl_SetObjResult(interp, resultList);
     return TCL_OK;
 }
+/*----------------------------------------------------------------------------*/
+/* >>>> Cleanup procedure */
+/*----------------------------------------------------------------------------*/
+/* This routine is called, if a thread is terminated */
+static void InterpCleanupProc(ClientData clientData, Tcl_Interp *interp)
+{
+    ckfree( (char *)clientData );
+}
 
 /*
  *----------------------------------------------------------------------
@@ -419,6 +466,7 @@ DLLEXPORT int
 Zxingcpp_Init(
     Tcl_Interp* interp)		/* Tcl interpreter */
 {
+    int * tkFlagPtr;
     Tcl_CmdInfo info;
 
 #ifdef USE_TCL_STUBS
@@ -429,16 +477,6 @@ Zxingcpp_Init(
     {
 	return TCL_ERROR;
     }
-#ifndef ZXINGCPP_NO_TK
-#ifdef USE_TK_STUBS
-    if (Tk_InitStubs(interp, "8.5-10", 0) == NULL)
-#else
-    if (Tcl_PkgRequire(interp, "Tk", "8.5-10", 0) == NULL)
-#endif
-    {
-	return TCL_ERROR;
-    }
-#endif
 
     if (Tcl_GetCommandInfo(interp, "::tcl::build-info", &info)) {
 	Tcl_CreateObjCommand(interp, "::zxingcpp::build-info",
@@ -497,13 +535,22 @@ Zxingcpp_Init(
 		), NULL);
     }
 
+    /*------------------------------------------------------------------------*/
+    /* This procedure is called once per thread and any thread local data     */
+    /* should be allocated and initialized here (and not in static variables) */
+    
+    /* Create a flag if Tk is loaded */
+    tkFlagPtr = (int *)ckalloc(sizeof(int));
+    *tkFlagPtr = 0;
+    Tcl_CallWhenDeleted(interp, InterpCleanupProc, (ClientData)tkFlagPtr);
+
     /* Provide the current package */
 
     if (Tcl_PkgProvideEx(interp, PACKAGE_NAME, PACKAGE_VERSION, NULL) != TCL_OK) {
 	return TCL_ERROR;
     }
     Tcl_CreateObjCommand(interp, "::zxingcpp::decode",
-	    (Tcl_ObjCmdProc *)ZxingcppDecodeObjCmd, NULL, NULL);
+	    (Tcl_ObjCmdProc *)ZxingcppDecodeObjCmd, (ClientData)tkFlagPtr, NULL);
 
     return TCL_OK;
 }
