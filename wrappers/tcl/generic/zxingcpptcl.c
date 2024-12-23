@@ -46,13 +46,13 @@ static int CheckForTk(Tcl_Interp *interp, int *tkFlagPtr)
         return TCL_OK;
     }
     if (*tkFlagPtr == 0) {
-        if ( ! Tcl_PkgPresent(interp, "Tk", "8.5-10", 0) ) {
+        if ( ! Tcl_PkgPresent(interp, "Tk", TK_VERSION, 0) ) {
             Tcl_SetResult(interp, "package Tk not loaded", TCL_STATIC);
             return TCL_ERROR;
         }
     }
 #ifdef USE_TK_STUBS
-    if (*tkFlagPtr < 0 || Tk_InitStubs(interp, "8.5-10", 0) == NULL) {
+    if (*tkFlagPtr < 0 || Tk_InitStubs(interp, TK_VERSION, 0) == NULL) {
         *tkFlagPtr = -1;
         Tcl_SetResult(interp, "error initializing Tk", TCL_STATIC);
         return TCL_ERROR;
@@ -67,7 +67,8 @@ static int CheckForTk(Tcl_Interp *interp, int *tkFlagPtr)
  *
  * ReaderOptionsGet --
  *
- *	extract command arguments and translate them to reader options
+ *	Extract command arguments and translate them to reader options.
+ *	Set the options in the given opts option object.
  *
  *		optc	count of given parameters and values
  *		objv	parameter object array. Contains arbitrary number of
@@ -76,8 +77,9 @@ static int CheckForTk(Tcl_Interp *interp, int *tkFlagPtr)
  *
  *	Result:
  *
- *		reader option object
- *		NULL on error. The error message is set in the interpreter
+ *		TCL_OK		Options are processed
+ *		TCL_ERROR	An error occured. The error message of the
+ *				interpreter is set.
  *
  *-------------------------------------------------------------------------
  */
@@ -186,22 +188,32 @@ ReaderOptionsGet(Tcl_Interp *interp, int objc, Tcl_Obj *const objv[], ZXing_Read
 		}
 		/* loop over supplied list items */
 		for ( listItem = 0; listItem < listLength; listItem++ ) {
-		    ZXing_BarcodeFormat format;
+		    ZXing_BarcodeFormats format;
 		    Tcl_Obj *formatObj;
+		    char * formatString;
 
 		    if (TCL_OK != Tcl_ListObjIndex(interp, objv[argPos], listItem,
 			    &formatObj) ) {
 			return TCL_ERROR;
 		    }
+		    formatString = Tcl_GetString(formatObj);
 		    /* translate string to format number */
-		    format = ZXing_BarcodeFormatFromString(
-			    Tcl_GetString(formatObj) );
+		    format = ZXing_BarcodeFormatFromString(formatString);
 		    /* check for unknown format string */
 		    if (format == ZXing_BarcodeFormat_Invalid) {
-			Tcl_SetObjResult(interp, Tcl_ObjPrintf(
-				"zxing-cpp format \"%s\" not found",
-				Tcl_GetString(formatObj) ) );
-			return TCL_ERROR;
+			/* check for special values */
+			if (0 == strcmp(formatString, "Any") ) {
+			    format = ZXing_BarcodeFormat_Any;
+			} else if (0 == strcmp(formatString, "LinearCodes") ) {
+			    format = ZXing_BarcodeFormat_LinearCodes;
+			} else if (0 == strcmp(formatString, "MatrixCodes") ) {
+			    format = ZXing_BarcodeFormat_MatrixCodes;
+			} else {
+			    Tcl_SetObjResult(interp, Tcl_ObjPrintf(
+				    "zxing-cpp format \"%s\" not found",
+				    formatString ) );
+			    return TCL_ERROR;
+			}
 		    }
 		    formats |=format;
 		}
@@ -664,6 +676,70 @@ ZxingcppDecodeObjCmd(ClientData tkFlagPtr, Tcl_Interp *interp,
     Tcl_SetObjResult(interp, resultList);
     return TCL_OK;
 }
+
+/*
+ *-------------------------------------------------------------------------
+ *
+ * ZxingcppGetFormatsObj --
+ *
+ *	Return list of all known formats.
+ *
+ *-------------------------------------------------------------------------
+ */
+
+static Tcl_Obj *
+ZxingcppGetFormatsObj(int special)
+{
+    Tcl_Obj *result;
+    int i;
+    result = Tcl_NewListObj(0, NULL);
+    for (i = 0; i < 20; i++) {
+	Tcl_ListObjAppendElement(NULL, result,
+		Tcl_NewStringObj(ZXing_BarcodeFormatToString(1<<i), -1));
+    }
+    if (special) {
+	Tcl_ListObjAppendElement(NULL, result, Tcl_NewStringObj("Any", -1));
+	Tcl_ListObjAppendElement(NULL, result,
+		Tcl_NewStringObj("LinearCodes", -1));
+	Tcl_ListObjAppendElement(NULL, result,
+		Tcl_NewStringObj("MatrixCodes", -1));
+    }
+    return result;
+}
+
+/*
+ *-------------------------------------------------------------------------
+ *
+ * ZxingcppSymbolTypesObjCmd --
+ *
+ *	zxingcpp::symbol_types Tcl command, returns list of symbol types.
+ *	Command format
+ *
+ *		zxingcpp::symbol_types
+ *
+ *	Result is a list with supported symbologies
+ *
+ *-------------------------------------------------------------------------
+ */
+
+static int
+ZxingcppFormatsObjCmd(ClientData unused, Tcl_Interp *interp,
+	int objc,  Tcl_Obj *const objv[])
+{
+    int special = 0;
+    if (objc > 2) {
+	Tcl_WrongNumArgs(interp, 1, objv, "?special?");
+	return TCL_ERROR;
+    }
+    if (objc == 2) {
+	if (TCL_OK != Tcl_GetBooleanFromObj(interp,objv[1],&special)) {
+	    return TCL_ERROR;
+	}
+    }
+    Tcl_SetObjResult(interp, ZxingcppGetFormatsObj(special));
+    return TCL_OK;
+}
+
 /*----------------------------------------------------------------------------*/
 /* >>>> Cleanup procedure */
 /*----------------------------------------------------------------------------*/
@@ -777,6 +853,8 @@ Zxingcpp_Init(
     }
     Tcl_CreateObjCommand(interp, "::zxingcpp::decode",
 	    (Tcl_ObjCmdProc *)ZxingcppDecodeObjCmd, (ClientData)tkFlagPtr, NULL);
+    Tcl_CreateObjCommand(interp, "zxingcpp::formats", ZxingcppFormatsObjCmd,
+	    (ClientData) NULL, (Tcl_CmdDeleteProc *) NULL);
 
     return TCL_OK;
 }
