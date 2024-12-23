@@ -122,6 +122,11 @@ ReaderOptionsGet(Tcl_Interp *interp, int objc, Tcl_Obj *const objv[], ZXing_Read
 	}
 	/* get the following parameter value */
 	argPos++;
+	
+	/*
+	 * get parameters of options with common type
+	 */
+	
 	switch (option) {
 	case iTryHarder:
 	case iTryRotate:
@@ -142,7 +147,11 @@ ReaderOptionsGet(Tcl_Interp *interp, int objc, Tcl_Obj *const objv[], ZXing_Read
 	    }
 	    break;
 	}
-	/* set the setting */
+
+	/*
+	 * set the setting
+	 */
+
 	switch (option) {
 	case iTryHarder:
 	    ZXing_ReaderOptions_setTryHarder(opts, intValue);
