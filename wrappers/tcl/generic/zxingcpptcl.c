@@ -61,6 +61,212 @@ static int CheckForTk(Tcl_Interp *interp, int *tkFlagPtr)
     *tkFlagPtr = 1;
     return TCL_OK;
 }
+
+/*
+ *-------------------------------------------------------------------------
+ *
+ * ReaderOptionsGet --
+ *
+ *	extract command arguments and translate them to reader options
+ *
+ *		optc	count of given parameters and values
+ *		objv	parameter object array. Contains arbitrary number of
+ *			option/value pairs
+ *		opts	An initialized ZXING-CPP reader option object pointer
+ *
+ *	Result:
+ *
+ *		reader option object
+ *		NULL on error. The error message is set in the interpreter
+ *
+ *-------------------------------------------------------------------------
+ */
+
+static int
+ReaderOptionsGet(Tcl_Interp *interp, int objc, Tcl_Obj *const objv[], ZXing_ReaderOptions* opts)
+{
+    int option;
+    const char *options[] = {
+	"TryHarder", "TryRotate", "TryInvert", "TryDownscale",
+	"IsPure", "ReturnErrors", "Formats", "Binarizer", "EanAddOnSymbol",
+	"TextMode", "MinLineCount", "MaxNumberOfSymbols",
+	NULL};
+    enum iOptions {
+	iTryHarder, iTryRotate, iTryInvert, iTryDownscale,
+	iIsPure, iReturnErrors, iFormats, iBinarizer,iEanAddOnSymbol,
+	iTextMode, iMinLineCount, iMaxNumberOfSymbols,
+	};
+
+    /*
+     * Check for pair option count
+     */
+    
+    if ( (objc %2) != 0) {
+	Tcl_SetResult(interp, "Option without value", TCL_STATIC);
+	return TCL_ERROR;
+    }
+    
+    /*
+     * Loop over given parameters
+     */
+    
+    for (int argPos = 0; argPos < objc; argPos++) {
+	
+	int intValue;
+	
+	/* get the option */
+	if (TCL_OK != 
+		Tcl_GetIndexFromObj(interp, objv[argPos], options, "subcmd", argPos, &option))
+	{
+	    return TCL_ERROR;
+	}
+	/* get the following parameter value */
+	argPos++;
+	switch (option) {
+	case iTryHarder:
+	case iTryRotate:
+	case iTryInvert:
+	case iTryDownscale:
+	case iIsPure:
+	case iReturnErrors:
+	    /* get a boolean value */
+	    if (TCL_OK != Tcl_GetBooleanFromObj(interp,objv[argPos], &intValue)) {
+		return TCL_ERROR;
+	    }
+	    break;
+	case iMinLineCount:
+	case iMaxNumberOfSymbols:
+	    /* get an int value */
+	    if (TCL_OK != Tcl_GetIntFromObj(interp,objv[argPos], &intValue)) {
+		return TCL_ERROR;
+	    }
+	    break;
+	}
+	/* set the setting */
+	switch (option) {
+	case iTryHarder:
+	    ZXing_ReaderOptions_setTryHarder(opts, intValue);
+	    break;
+	case iTryRotate:
+	    ZXing_ReaderOptions_setTryRotate(opts, intValue);
+	    break;
+	case iTryInvert:
+	    ZXing_ReaderOptions_setTryInvert(opts, intValue);
+	    break;
+	case iTryDownscale:
+	    ZXing_ReaderOptions_setTryDownscale(opts, intValue);
+	    break;
+	case iIsPure:
+	    ZXing_ReaderOptions_setIsPure(opts, intValue);
+	    break;
+	case iReturnErrors:
+	    ZXing_ReaderOptions_setReturnErrors(opts, intValue);
+	    break;
+	case iFormats:
+	    {
+		/*
+		 * Translate a list of symbologies to a ZXING-CPP format
+		 * The format strings are a field of flags which may be ored.
+		 */
+
+		ZXing_BarcodeFormats formats = ZXing_BarcodeFormat_None;
+		Tcl_Size listLength, listItem;
+
+		if (TCL_OK != Tcl_ListObjLength(interp,objv[argPos],&listLength)) {
+		    return TCL_ERROR;
+		}
+		/* loop over supplied list items */
+		for ( listItem = 0; listItem < listLength; listItem++ ) {
+		    ZXing_BarcodeFormat format;
+		    Tcl_Obj *formatObj;
+
+		    if (TCL_OK != Tcl_ListObjIndex(interp, objv[argPos], listItem,
+			    &formatObj) ) {
+			return TCL_ERROR;
+		    }
+		    /* translate string to format number */
+		    format = ZXing_BarcodeFormatFromString(
+			    Tcl_GetString(formatObj) );
+		    /* check for unknown format string */
+		    if (format == ZXing_BarcodeFormat_Invalid) {
+			Tcl_SetObjResult(interp, Tcl_ObjPrintf(
+				"zxing-cpp format \"%s\" not found",
+				Tcl_GetString(formatObj) ) );
+			return TCL_ERROR;
+		    }
+		    formats |=format;
+		}
+
+		/* set the format list */
+		ZXing_ReaderOptions_setFormats(opts, formats);
+	    }
+	    break;
+	case iBinarizer:
+	    {
+		int value;
+
+		/*
+		 * The target value "ZXing_Binarizer" an enum of the following
+		 * values.
+		 */
+
+		const char *values[] = {
+		    "LocalAverage", "GlobalHistogram", "FixedThreshold", "BoolCast",
+		    NULL};
+		if (TCL_OK != 
+			Tcl_GetIndexFromObj(interp, objv[argPos], values, "value", argPos, &value))
+		{
+		    return TCL_ERROR;
+		}
+		ZXing_ReaderOptions_setBinarizer(opts, value);
+	    }
+	    break;
+	case iEanAddOnSymbol:
+	    {
+		
+		/*
+		 * The target value "ZXing_EanAddOnSymbol" an enum of the
+		 * following values.
+		 */
+		
+		int value;
+		const char *values[] = { "Ignore", "Read", "Require", NULL};
+		if (TCL_OK != 
+			Tcl_GetIndexFromObj(interp, objv[argPos], values, "value", argPos, &value))
+		{
+		    return TCL_ERROR;
+		}
+		ZXing_ReaderOptions_setEanAddOnSymbol(opts, value);
+	    }
+	    break;
+	case iTextMode:
+	    {
+		
+		/*
+		 * The target value "ZXing_TextMode" an enum of the
+		 * following values.
+		 */
+		
+		int value;
+		const char *values[] = { "Plain", "ECI", "HRI", "Hex", "Escaped", NULL};
+		if (TCL_OK != 
+			Tcl_GetIndexFromObj(interp, objv[argPos], values, "value", argPos, &value))
+		{
+		    return TCL_ERROR;
+		}
+		ZXing_ReaderOptions_setTextMode(opts, value);
+	    }
+	    break;
+	case iMinLineCount:
+	    ZXing_ReaderOptions_setMinLineCount(opts, intValue);
+	    break;
+	case iMaxNumberOfSymbols:
+	    ZXing_ReaderOptions_setMaxNumberOfSymbols(opts, intValue);
+	    break;
+	}
+    }
+    return TCL_OK;
+}
 /*
  *-------------------------------------------------------------------------
  *
@@ -102,8 +308,8 @@ ZxingcppDecodeObjCmd(ClientData tkFlagPtr, Tcl_Interp *interp,
     Tcl_DString recode;
 
 
-    if ((objc < 2) || (objc > 3)) {
-	Tcl_WrongNumArgs(interp, 1, objv, "photoEtc ?syms?");
+    if ( objc < 2 ) {
+	Tcl_WrongNumArgs(interp, 1, objv, "photoEtc ?opt...?");
 	return TCL_ERROR;
     }
     Tcl_GetTime(&now);
@@ -285,10 +491,10 @@ ZxingcppDecodeObjCmd(ClientData tkFlagPtr, Tcl_Interp *interp,
      */
 
     opts = ZXing_ReaderOptions_new();
-    ZXing_ReaderOptions_setTextMode(opts, ZXing_TextMode_HRI);
-    ZXing_ReaderOptions_setEanAddOnSymbol(opts, ZXing_EanAddOnSymbol_Ignore);
-    ZXing_ReaderOptions_setFormats(opts, formats);
-    ZXing_ReaderOptions_setReturnErrors(opts, true);
+    if (TCL_ERROR == ReaderOptionsGet(interp, objc-2,  &objv[2], opts) ) {
+	ZXing_ReaderOptions_delete(opts);
+	return TCL_ERROR;
+    }
 
     /*
      * Read the bar code
@@ -337,14 +543,25 @@ ZxingcppDecodeObjCmd(ClientData tkFlagPtr, Tcl_Interp *interp,
 	const ZXing_Barcode* barcode = ZXing_Barcodes_at(barcodes, i);
 	uint8_t* bytePtr;
 	int len;
+	char *zxingcppString;
 
 	/*
 	 * Build a dict with the result keys
 	 */
 	
-	Tcl_DStringAppend(&recode, ZXing_Barcode_text(barcode), -1);
+	zxingcppString = ZXing_Barcode_text(barcode);
+	Tcl_DStringAppend(&recode, zxingcppString, -1);
+	ZXing_free(zxingcppString);
 	Tcl_ExternalToUtfDString(utf8Encoding, ZXing_Barcode_text(barcode), -1, &recode); 
 	Tcl_DictObjPut(interp, resultDict, Tcl_NewStringObj("text",-1),
+		Tcl_NewStringObj(Tcl_DStringValue (&recode), Tcl_DStringLength (&recode)));
+	Tcl_DStringFree(&recode);
+
+	zxingcppString = ZXing_BarcodeFormatToString(ZXing_Barcode_format(barcode));
+	Tcl_DStringAppend(&recode, zxingcppString, -1);
+	ZXing_free(zxingcppString);
+	Tcl_ExternalToUtfDString(utf8Encoding, ZXing_Barcode_text(barcode), -1, &recode); 
+	Tcl_DictObjPut(interp, resultDict, Tcl_NewStringObj("format",-1),
 		Tcl_NewStringObj(Tcl_DStringValue (&recode), Tcl_DStringLength (&recode)));
 	Tcl_DStringFree(&recode);
 
@@ -470,9 +687,9 @@ Zxingcpp_Init(
     Tcl_CmdInfo info;
 
 #ifdef USE_TCL_STUBS
-    if (Tcl_InitStubs(interp, "8.5-10", 0) == NULL)
+    if (Tcl_InitStubs(interp, TCL_VERSION, 0) == NULL)
 #else
-    if (Tcl_PkgRequire(interp, "Tcl", "8.5-10", 0) == NULL)
+    if (Tcl_PkgRequire(interp, "Tcl", TCL_VERSION, 0) == NULL)
 #endif
     {
 	return TCL_ERROR;
