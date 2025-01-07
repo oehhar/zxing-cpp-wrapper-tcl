@@ -264,8 +264,13 @@ ReaderOptionsGet(Tcl_Interp *interp, int objc, Tcl_Obj *const objv[], ZXing_Read
 	    {
 		
 		/*
-		 * The target value "ZXing_TextMode" an enum of the
-		 * following values.
+		 * Format of the text return key.
+		 * Example values for a NULL content code 128 code:
+		 * Plain: ASCII 0
+		 * ECI: \C0\000026 ASCII 0
+		 * HRI: <NUL>
+		 * Hex: 00
+		 * Escaped: <NUL>
 		 */
 		
 		int value;
@@ -565,77 +570,107 @@ ZxingcppDecodeObjCmd(ClientData tkFlagPtr, Tcl_Interp *interp,
 	uint8_t* bytePtr;
 	int len;
 	char *zxingcppString;
+	ZXing_Position zxing_position;
+	Tcl_Obj * positionArray[8];
 
 	/*
 	 * Build a dict with the result keys
 	 */
 	
+	/* Key text: interpretation line, utf-8 encoded */
 	zxingcppString = ZXing_Barcode_text(barcode);
 	Tcl_DStringAppend(&recode, zxingcppString, -1);
 	ZXing_free(zxingcppString);
 	Tcl_ExternalToUtfDString(utf8Encoding, ZXing_Barcode_text(barcode), -1, &recode); 
 	Tcl_DictObjPut(interp, resultDict, Tcl_NewStringObj("text",-1),
-		Tcl_NewStringObj(Tcl_DStringValue (&recode), Tcl_DStringLength (&recode)));
+		Tcl_NewStringObj(Tcl_DStringValue (&recode),
+		    Tcl_DStringLength (&recode)));
 	Tcl_DStringFree(&recode);
 
-	zxingcppString = ZXing_BarcodeFormatToString(ZXing_Barcode_format(barcode));
-	Tcl_DStringAppend(&recode, zxingcppString, -1);
+	/* Key format: symbology, ASCII encoded and zero terminated */
+	zxingcppString = ZXing_BarcodeFormatToString(
+		ZXing_Barcode_format( barcode) );
+	Tcl_DictObjPut(interp, resultDict, Tcl_NewStringObj("format", -1),
+		Tcl_NewStringObj( zxingcppString, -1) );
 	ZXing_free(zxingcppString);
-	Tcl_ExternalToUtfDString(utf8Encoding, ZXing_Barcode_text(barcode), -1, &recode); 
-	Tcl_DictObjPut(interp, resultDict, Tcl_NewStringObj("format",-1),
-		Tcl_NewStringObj(Tcl_DStringValue (&recode), Tcl_DStringLength (&recode)));
-	Tcl_DStringFree(&recode);
 
+	/* Key bytes: */
 	bytePtr=ZXing_Barcode_bytes(barcode, &len);
 	Tcl_DictObjPut(interp, resultDict, Tcl_NewStringObj("bytes",-1),
 		Tcl_NewByteArrayObj(bytePtr,len));
 
+	/* Key bytesECI: */
 	bytePtr=ZXing_Barcode_bytesECI(barcode, &len);
 	Tcl_DictObjPut(interp, resultDict, Tcl_NewStringObj("bytesECI",-1),
 		Tcl_NewByteArrayObj(bytePtr,len));
 
-	Tcl_DictObjPut(interp, resultDict, Tcl_NewStringObj("format",-1),
-		Tcl_NewStringObj( ZXing_BarcodeFormatToString(
-		    ZXing_Barcode_format(barcode)),
-		-1));
-
+	/*
+	 * Key content: one of: Text, Binary, Mixed, GS1, ISO15434, UnknownECI
+	 */
+	zxingcppString = ZXing_ContentTypeToString(
+		ZXing_Barcode_contentType(barcode));
 	Tcl_DictObjPut(interp, resultDict, Tcl_NewStringObj("content",-1),
-		Tcl_NewStringObj( ZXing_ContentTypeToString(
-		    ZXing_Barcode_contentType(barcode)),
-		-1));
+		Tcl_NewStringObj(zxingcppString ,-1));
+	ZXing_free(zxingcppString);
 
+	/* Key symbologyIdentifier: Example: ]C0 for Code128 */
 	Tcl_DictObjPut(interp, resultDict,
 		Tcl_NewStringObj("symbologyIdentifier", -1),
-		Tcl_NewStringObj( ZXing_Barcode_symbologyIdentifier(barcode), -1));
+		Tcl_NewStringObj( ZXing_Barcode_symbologyIdentifier(barcode),
+		    -1));
 
+	/* Key hasECI: true if ECI present */
 	Tcl_DictObjPut(interp, resultDict,
 		Tcl_NewStringObj("hasECI", -1),
 		Tcl_NewBooleanObj( ZXing_Barcode_hasECI(barcode) ) );
+
+	/*
+	 * Key ecLevel: string representing the EC level. Empty string if not
+	 * used by the symbology.
+	 */
 
 	Tcl_DictObjPut(interp, resultDict,
 		Tcl_NewStringObj("ecLevel", -1),
 		Tcl_NewStringObj( ZXing_Barcode_ecLevel(barcode), -1));
 
+	/*
+	 * Key position: list of numbers: topLeft.x, topLeft.y, topRight.x,
+	 * topRight.y, bottomRight.x, bottomRight.y,, bottomLeft.x,
+	 * bottomLeft.y.
+	 */
+	
+	zxing_position = ZXing_Barcode_position(barcode);
+	positionArray[0] = Tcl_NewIntObj( zxing_position.topLeft.x );
+	positionArray[1] = Tcl_NewIntObj( zxing_position.topLeft.y );
+	positionArray[2] = Tcl_NewIntObj( zxing_position.topRight.x );
+	positionArray[3] = Tcl_NewIntObj( zxing_position.topRight.y );
+	positionArray[4] = Tcl_NewIntObj( zxing_position.bottomRight.x );
+	positionArray[5] = Tcl_NewIntObj( zxing_position.bottomRight.y );
+	positionArray[6] = Tcl_NewIntObj( zxing_position.bottomLeft.x );
+	positionArray[7] = Tcl_NewIntObj( zxing_position.bottomLeft.y );
+
 	Tcl_DictObjPut(interp, resultDict,
 		Tcl_NewStringObj("position", -1),
-		Tcl_NewStringObj( ZXing_PositionToString(
-		    ZXing_Barcode_position(barcode)),
-		-1));
+		Tcl_NewListObj(8, positionArray) );
 
+	/* Key orientation: symbol orientation in degrees, clockwise */
 	Tcl_DictObjPut(interp, resultDict,
 		Tcl_NewStringObj("orientation", -1),
 		Tcl_NewIntObj( ZXing_Barcode_orientation(barcode) ) );
 
+	/* Key isMirrored: 1 if code was up-side down */
 	Tcl_DictObjPut(interp, resultDict,
 		Tcl_NewStringObj("isMirrored", -1),
 		Tcl_NewBooleanObj( ZXing_Barcode_isMirrored(barcode) ) );
 
+	/* Key isInverted: 1 if code was inverted */
 	Tcl_DictObjPut(interp, resultDict,
 		Tcl_NewStringObj("isInverted", -1),
 		Tcl_NewBooleanObj( ZXing_Barcode_isInverted(barcode) ) );
 
 	if (!ZXing_Barcode_isValid(barcode)) {
 	    char * typeText;
+	    /* Key errorType: */
 	    switch ( ZXing_Barcode_errorType(barcode) ) {
 	    case ZXing_ErrorType_None:
 		typeText = "None";
@@ -653,6 +688,8 @@ ZxingcppDecodeObjCmd(ClientData tkFlagPtr, Tcl_Interp *interp,
 	    }
 	    Tcl_DictObjPut(interp, resultDict, Tcl_NewStringObj("errorType",-1),
 		    Tcl_NewStringObj(typeText,-1));
+
+	    /* Key errorMsg: */
 	    Tcl_DictObjPut(interp, resultDict, Tcl_NewStringObj("errorMsg",-1),
 		    Tcl_NewStringObj(ZXing_Barcode_errorMsg(barcode),-1));
 	}
