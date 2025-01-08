@@ -544,7 +544,8 @@ ZXingCppDecodeHandleEvent(Tcl_Event *evPtr, int flags)
 	 * If shared, a copy is made and the ref count is decremented.
 	 * Then, the copy is disposed below.
 	 * Note that the interpreter crashed, when the ref count was not
-	 * right (TCL 8.6.16).
+	 * decremented (TCL 8.6.16) in the next unrelated event
+	 * (in my case: a Tk configure event).
 	 */
 	
 	if (Tcl_IsShared(cmdObj)) {
