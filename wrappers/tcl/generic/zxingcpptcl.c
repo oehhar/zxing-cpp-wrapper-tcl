@@ -498,10 +498,11 @@ ZXingCppDecodeHandleEvent(Tcl_Event *evPtr, int flags)
 {
     AsyncEvent *aevPtr = (AsyncEvent *) evPtr;
     AsyncDecode *aPtr = aevPtr->aPtr;
-    int ret;
+    int ret = TCL_OK;
     ZXing_Barcodes* barcodes;
     Tcl_Obj *cmdObj;
     Tcl_WideInt ms;
+    char* error = NULL;
 
     if ((aPtr == NULL) || (aPtr->interpTid == NULL)) {
 	return 1;
@@ -517,42 +518,88 @@ ZXingCppDecodeHandleEvent(Tcl_Event *evPtr, int flags)
     ms = aPtr->ms;
     barcodes = aPtr->barcodes;
     aPtr->barcodes = NULL;
-    Tcl_MutexUnlock(&aPtr->mutex);
+    
+    /*
+     * Check for decoder error
+     */
+    
     if (barcodes == NULL) {
-	char* error = ZXing_LastErrorMsg();
-	Tcl_SetObjResult( aPtr->interp, Tcl_NewStringObj(error,-1) );
-	ZXing_free(error);
-	ret = TCL_ERROR;
-    } else {
 	if (cmdObj != NULL) {
-	    
-	    /*
-	     * The ref count is incremented when the object is put into the
-	     * object structure.
-	     * If not shared (unlikely) it is disposed below.
-	     * If shared, a copy is made and the ref count is decremented.
-	     * Then, the copy is disposed below.
-	     * Note that the interpreter crashed, when the ref count was not
-	     * right (TCL 8.6.16).
-	     */
-	    
-	    if (Tcl_IsShared(cmdObj)) {
-		Tcl_Obj *cmdObj2 = cmdObj;
-		cmdObj = Tcl_DuplicateObj(cmdObj2);
-		Tcl_DecrRefCount(cmdObj2);
-		Tcl_IncrRefCount(cmdObj);
-	    }
-	    ret = BarcodesToResultList(aPtr->interp, cmdObj, ms, barcodes);
+	    error = ZXing_LastErrorMsg();
+	}
+    } else {
+	if (cmdObj == NULL) {
 	    ZXing_Barcodes_delete(barcodes);
-	    
-	    if (ret == TCL_OK) {
-		ret = Tcl_EvalObjEx(aPtr->interp, cmdObj, TCL_GLOBAL_ONLY);
-	    }
-	    Tcl_DecrRefCount(cmdObj);
-	} else {
-	    ret = TCL_OK;
 	}
     }
+
+    Tcl_MutexUnlock(&aPtr->mutex);
+
+    if (cmdObj != NULL) {
+    
+	/*
+	 * The ref count is incremented when the object is put into the
+	 * object structure.
+	 * If not shared (unlikely) it is disposed below.
+	 * If shared, a copy is made and the ref count is decremented.
+	 * Then, the copy is disposed below.
+	 * Note that the interpreter crashed, when the ref count was not
+	 * right (TCL 8.6.16).
+	 */
+	
+	if (Tcl_IsShared(cmdObj)) {
+	    Tcl_Obj *cmdObj2 = cmdObj;
+	    cmdObj = Tcl_DuplicateObj(cmdObj2);
+	    Tcl_DecrRefCount(cmdObj2);
+	    Tcl_IncrRefCount(cmdObj);
+	}
+	if (barcodes == NULL) {
+	    
+	    /*
+	     * Report a decoder error with a time and a dict with keys:
+	     * - errorType: DecoderFailure
+	     * - errorMsg: message from decoder
+	     */
+
+	    Tcl_Obj *timeObj;
+	    timeObj = Tcl_NewWideIntObj(ms);
+	    ret = Tcl_ListObjAppendElement(aPtr->interp, cmdObj, timeObj);
+	    if (ret != TCL_OK) {
+		Tcl_DecrRefCount(timeObj);
+	    } else {
+		Tcl_Obj * resultDict = Tcl_NewDictObj();
+
+		/* Key errorType: */
+		Tcl_DictObjPut(aPtr->interp, resultDict,
+			Tcl_NewStringObj("errorType",-1),
+			Tcl_NewStringObj("DecoderFailure",-1));
+    
+		/* Key errorMsg: */
+		Tcl_DictObjPut(aPtr->interp, resultDict,
+			Tcl_NewStringObj("errorMsg",-1),
+			Tcl_NewStringObj(error,-1));
+		
+		ret = Tcl_ListObjAppendElement(aPtr->interp, cmdObj,
+			resultDict);
+	    }
+	    ZXing_free(error);
+	} else {
+	    ret = BarcodesToResultList(aPtr->interp, cmdObj, ms, barcodes);
+	    ZXing_Barcodes_delete(barcodes);
+	}
+	
+	if (ret == TCL_OK) {
+	    
+	    /*
+	     * It is important to free anything before this call.
+	     * Anything may happen here; events - long calculation.
+	     */
+	    
+	    ret = Tcl_EvalObjEx(aPtr->interp, cmdObj, TCL_GLOBAL_ONLY);
+	}
+	Tcl_DecrRefCount(cmdObj);
+    }
+
     if (ret == TCL_ERROR) {
 	Tcl_AddErrorInfo(aPtr->interp, "\n    (zxingcpp event handler)");
 	Tcl_BackgroundException(aPtr->interp, ret);
@@ -882,16 +929,17 @@ CheckForTk(Tcl_Interp *interp, int *tkFlagPtr)
  *
  *	Transform a provided argument to a zxingcpp visual
  *
- *		zxingcpp::decode photoEtc ?option1 value1? ...
+ *		tkFlagPtr	thread global memory to save, if tk is
+ *				present
+ *		interp		interpreter for error reporting
+ *		ivPtr		to save zxingcpp visual pointer to.
+ *		argObj		Tcl object which may contain:
+ *				- a list of 4 items width height bpp blop
+ *				- a tk image name
  *
- *		photoEtc	photo image name or list of
- *				{width height bpp bytes}
- *		options		option /value pairs to the decoder
- *
- *	Result is a list composed of the following elements
- *
- *		time	decode/processing time in milliseconds
- *		resDict1 ?resDict2? ...	result dictionaries
+ *	Result is standard Tcl result.
+ *	On success, ivPtr is set.
+ *	On error, the result of the intrpreter is set
  *
  *-------------------------------------------------------------------------
  */
@@ -972,6 +1020,7 @@ ArgumentToZXingCppVisual(int *tkFlagPtr, Tcl_Interp *interp,
 	}
     }
 #endif
+
     /*
      * Translate the block to a txing image view object
      * 
@@ -1097,13 +1146,13 @@ ArgumentToZXingCppVisual(int *tkFlagPtr, Tcl_Interp *interp,
  *
  *	Transform the zxingcpp result to a result list
  *
- *		interp		current TCL interpreter
+ *		interp		TCL interpreter for error reporting
  *		resultList	List object to append the data to
  *		td		Time argument
  *		barcodes	zxingcpp barcodes object
  *
- *	Result is a standard TCL result. Error arises, if passed object is
- *	not a list.
+ *	Result is a standard TCL result.
+ *	Errors may arise, if the passed object is not a list or shared.
  *
  *-------------------------------------------------------------------------
  */
@@ -1406,8 +1455,8 @@ ZxingcppDecodeObjCmd(ClientData tkFlagPtr, Tcl_Interp *interp,
  */
 
 static int
-ZXingCppAsyncDecodeObjCmd_NoThreads(ClientData clientData, Tcl_Interp *interp,
-				int objc,  Tcl_Obj *const objv[])
+ZXingCppAsyncDecodeObjCmd_NoThreads(ClientData clientData,
+	Tcl_Interp *interp, int objc,  Tcl_Obj *const objv[])
 {
     Tcl_SetResult(interp, "unsupported in non-threaded builds",
 		  TCL_STATIC);
