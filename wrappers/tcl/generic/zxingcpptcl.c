@@ -12,6 +12,9 @@
  * with permission by Christian Werner (THANKS!)
  */
 
+/* Decode error simulation for testing */
+/* #define ZXINGCPP_SIMULATE_DECODE_ERROR 1 */
+
 #ifdef ZXINGCPP_NO_TK
 
 /* Partial photo image block */
@@ -46,6 +49,11 @@ typedef struct {
 #endif
 
 static int CheckForTk(Tcl_Interp *interp, int *tkFlagPtr);
+static int ZXingCppDecodeHandleEvent(Tcl_Event *evPtr, int flags);
+static int ArgumentToZXingCppVisual(ClientData tkFlagPtr, Tcl_Interp *interp,
+	ZXing_ImageView **ivPtr, Tcl_Obj *const argObj);
+static int BarcodesToResultList(Tcl_Interp *interp, Tcl_Obj *resultList, 
+	Tcl_WideInt td, ZXing_Barcodes* barcodes);
 
 /*
  *-------------------------------------------------------------------------
@@ -379,9 +387,10 @@ typedef struct {
     /* Thread input: zxingcpp settings */
     ZXing_ReaderOptions *opts;
 
-    /* Thread output: ms, barcodes structure */
+    /* Thread output: ms, barcodes structure or error message */
     Tcl_WideInt ms;
     ZXing_Barcodes* barcodes;
+    char* error;
 } AsyncDecode;
 
 /*
@@ -394,11 +403,6 @@ typedef struct {
     Tcl_HashEntry *hPtr;
 } AsyncEvent;
 
-static int ZXingCppDecodeHandleEvent(Tcl_Event *evPtr, int flags);
-static int ArgumentToZXingCppVisual(ClientData tkFlagPtr, Tcl_Interp *interp,
-	ZXing_ImageView **ivPtr, Tcl_Obj *const argObj);
-static int BarcodesToResultList(Tcl_Interp *interp, Tcl_Obj *resultList, 
-	Tcl_WideInt td, ZXing_Barcodes* barcodes);
 
 /*
  *-------------------------------------------------------------------------
@@ -417,6 +421,7 @@ ZXingCppThread(ClientData clientData)
 {
     AsyncDecode *aPtr = (AsyncDecode *) clientData;
     ZXing_Barcodes* barcodes;
+    char * error;
     Tcl_Time now;
     int isNew;
     Tcl_WideInt tw[2], ms;
@@ -437,11 +442,24 @@ ZXingCppThread(ClientData clientData)
 	    ZXing_Barcodes_delete(aPtr->barcodes);
 	    aPtr->barcodes = NULL;
 	}
+	if (aPtr->error != NULL) {
+	    ZXing_free(aPtr->error);
+	    aPtr->error = NULL;
+	}
 	Tcl_MutexUnlock(&aPtr->mutex);
 	Tcl_GetTime(&now);
 	tw[0] = (Tcl_WideInt) now.sec * 1000 + now.usec / 1000;
 
+#ifdef ZXINGCPP_SIMULATE_DECODE_ERROR
+	barcodes = ZXing_ReadBarcodes(NULL, aPtr->opts);
+#else
 	barcodes = ZXing_ReadBarcodes(aPtr->iv, aPtr->opts);
+#endif
+	if (barcodes == NULL) {
+	    error = ZXing_LastErrorMsg();
+	} else {
+	    error = NULL;
+	}
 	
 	Tcl_GetTime(&now);
 	tw[1] = (Tcl_WideInt) now.sec * 1000 + now.usec / 1000;
@@ -459,6 +477,7 @@ ZXingCppThread(ClientData clientData)
 	if (aPtr->cmdObj != NULL) {
 	    aPtr->ms = ms;
 	    aPtr->barcodes = barcodes;
+	    aPtr->error = error;
 	    event = (AsyncEvent *) ckalloc(sizeof(AsyncEvent));
 	    event->header.proc = ZXingCppDecodeHandleEvent;
 	    event->header.nextPtr = NULL;
@@ -475,7 +494,12 @@ ZXingCppThread(ClientData clientData)
 		Tcl_ThreadAlert(aPtr->interpTid);
 	    }
 	} else {
-	    ZXing_Barcodes_delete(barcodes);
+	    if (barcodes != NULL) {
+		ZXing_Barcodes_delete(barcodes);
+	    }
+	    if (error != NULL) {
+		ZXing_free(error);
+	    }
 	}
     }
     Tcl_MutexUnlock(&aPtr->mutex);
@@ -500,9 +524,9 @@ ZXingCppDecodeHandleEvent(Tcl_Event *evPtr, int flags)
     AsyncDecode *aPtr = aevPtr->aPtr;
     int ret = TCL_OK;
     ZXing_Barcodes* barcodes;
+    char * error;
     Tcl_Obj *cmdObj;
     Tcl_WideInt ms;
-    char* error = NULL;
 
     if ((aPtr == NULL) || (aPtr->interpTid == NULL)) {
 	return 1;
@@ -518,18 +542,19 @@ ZXingCppDecodeHandleEvent(Tcl_Event *evPtr, int flags)
     ms = aPtr->ms;
     barcodes = aPtr->barcodes;
     aPtr->barcodes = NULL;
+    error = aPtr->error;
+    aPtr->error = NULL;
     
     /*
-     * Check for decoder error
+     * Delete if not used
      */
     
-    if (barcodes == NULL) {
-	if (cmdObj != NULL) {
-	    error = ZXing_LastErrorMsg();
-	}
-    } else {
-	if (cmdObj == NULL) {
+    if (cmdObj == NULL) {
+	if (barcodes != NULL) {
 	    ZXing_Barcodes_delete(barcodes);
+	}
+	if (error != NULL) {
+	    ZXing_free(error);
 	}
     }
 
@@ -554,8 +579,19 @@ ZXingCppDecodeHandleEvent(Tcl_Event *evPtr, int flags)
 	    Tcl_DecrRefCount(cmdObj2);
 	    Tcl_IncrRefCount(cmdObj);
 	}
-	if (barcodes == NULL) {
-	    
+	
+	if (barcodes != NULL) {
+
+	    /*
+	     * Report a barcode scan
+	     * Note that barcode or error may by != 0.
+	     */
+	
+	    ret = BarcodesToResultList(aPtr->interp, cmdObj, ms, barcodes);
+	    ZXing_Barcodes_delete(barcodes);
+
+	} else {
+
 	    /*
 	     * Report a decoder error with a time and a dict with keys:
 	     * - errorType: DecoderFailure
@@ -568,6 +604,8 @@ ZXingCppDecodeHandleEvent(Tcl_Event *evPtr, int flags)
 	    if (ret != TCL_OK) {
 		Tcl_DecrRefCount(timeObj);
 	    } else {
+		char * errorCur;
+		
 		Tcl_Obj * resultDict = Tcl_NewDictObj();
 
 		/* Key errorType: */
@@ -575,27 +613,38 @@ ZXingCppDecodeHandleEvent(Tcl_Event *evPtr, int flags)
 			Tcl_NewStringObj("errorType",-1),
 			Tcl_NewStringObj("DecoderFailure",-1));
     
-		/* Key errorMsg: */
+		/*
+		 * Key errorMsg:
+		 * The error message is provided by zxing in pointer "error".
+		 * This should not be NULL. Nevertheless, zxingcpp controls
+		 * this. So, provide a generic error message, if none provided.
+		 */
+
+		if (error != NULL) {
+		    errorCur = error;
+		} else {
+		    errorCur = "No error details reported by ZXing-Cpp";
+		}
 		Tcl_DictObjPut(aPtr->interp, resultDict,
 			Tcl_NewStringObj("errorMsg",-1),
-			Tcl_NewStringObj(error,-1));
+			Tcl_NewStringObj(errorCur,-1));
 		
 		ret = Tcl_ListObjAppendElement(aPtr->interp, cmdObj,
 			resultDict);
 	    }
+	}
+	if (error != NULL) {
 	    ZXing_free(error);
-	} else {
-	    ret = BarcodesToResultList(aPtr->interp, cmdObj, ms, barcodes);
-	    ZXing_Barcodes_delete(barcodes);
 	}
 	
+	/*
+	 * Invoke passed command.
+	 * It is important to free anything before this call.
+	 * Anything may happen here: events - long calculation - another
+	 * decode call.
+	 */
+	    
 	if (ret == TCL_OK) {
-	    
-	    /*
-	     * It is important to free anything before this call.
-	     * Anything may happen here; events - long calculation.
-	     */
-	    
 	    ret = Tcl_EvalObjEx(aPtr->interp, cmdObj, TCL_GLOBAL_ONLY);
 	}
 	Tcl_DecrRefCount(cmdObj);
@@ -648,7 +697,6 @@ ZXingCppAsyncStop(Tcl_Interp *interp, AsyncDecode *aPtr)
 	Tcl_DeleteHashEntry(hPtr);
 	hPtr = Tcl_NextHashEntry(&search);
     }
-    Tcl_MutexUnlock(&aPtr->mutex);
     if (aPtr->cmdObj != NULL) {
 	Tcl_DecrRefCount(aPtr->cmdObj);
 	aPtr->cmdObj = NULL;
@@ -657,6 +705,11 @@ ZXingCppAsyncStop(Tcl_Interp *interp, AsyncDecode *aPtr)
 	ZXing_Barcodes_delete(aPtr->barcodes);
 	aPtr->barcodes = NULL;
     }
+    if (aPtr->error != NULL) {
+	ZXing_free(aPtr->error);
+	aPtr->error = NULL;
+    }
+    Tcl_MutexUnlock(&aPtr->mutex);
     return TCL_OK;
 }
 
@@ -709,6 +762,7 @@ ZXingCppAsyncStatus(Tcl_Interp *interp, AsyncDecode *aPtr)
  *	Check/start the decoder thread. Error cases:
  *	- thread creation failed, could not be started
  *	- thread is already started but still processing a request
+ *	  and the reporting event was not processed jet.
  *
  *-------------------------------------------------------------------------
  */
@@ -809,12 +863,12 @@ ZXingCppAsyncCmdDeleted(ClientData clientData)
  *				{width height bpp bytes}
  *		callback	procedure to invoke at end of
  *				decoding process
- *		?opt1 val1? ...	list of options
+ *		?opt1 val1? ...	decoder options key-value pairs
  *
  *	Arguments appended to callback
  *
- *		time	decode/processing time in milliseconds
- *		decoded	decoded data dict if any
+ *		time		decode/processing time in milliseconds
+ *		decoded1 ...	decoded data dicts, one per code
  *
  *-------------------------------------------------------------------------
  */
@@ -846,15 +900,29 @@ ZXingCppAsyncDecodeObjCmd(ClientData clientData, Tcl_Interp *interp,
 	return TCL_ERROR;
     }
 
+    /*
+     * background decode command follows
+     * First get zxingcpp visual from image argument
+     */
+    
     if (TCL_OK != ArgumentToZXingCppVisual(aPtr->tkFlagPtr, interp, &iv,
 	    objv[1]) ) {
 	return TCL_ERROR;
     }
 
+    /*
+     * Start thread and check if eventual last decode event was fired
+     */
+    
     if (ZXingCppAsyncStart(interp, aPtr) != TCL_OK) {
 	ZXing_ImageView_delete(iv);
 	return TCL_ERROR;
     }
+    
+    /*
+     * Check command object to be a list and to contain more than 1 element
+     */
+    
     if (Tcl_ListObjLength(interp, objv[2], &nCmdObjs) != TCL_OK) {
 	ZXing_ImageView_delete(iv);
 	return TCL_ERROR;
@@ -876,6 +944,10 @@ ZXingCppAsyncDecodeObjCmd(ClientData clientData, Tcl_Interp *interp,
 	return TCL_ERROR;
     }
 
+    /*
+     * Start decode in worker thread
+     */
+    
     Tcl_MutexLock(&aPtr->mutex);
     aPtr->opts = opts;
     aPtr->iv = iv;
@@ -1395,7 +1467,11 @@ ZxingcppDecodeObjCmd(ClientData tkFlagPtr, Tcl_Interp *interp,
      * Read the bar code
      */
 
+#ifdef ZXINGCPP_SIMULATE_DECODE_ERROR
+    barcodes = ZXing_ReadBarcodes(NULL, opts);
+#else
     barcodes = ZXing_ReadBarcodes(iv, opts);
+#endif
 
     ZXing_ImageView_delete(iv);
     ZXing_ReaderOptions_delete(opts);
