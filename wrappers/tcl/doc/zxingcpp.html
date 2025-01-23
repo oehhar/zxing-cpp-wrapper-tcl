@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>zxingcpp(n) | zxingcpp user documentation</title>
+  <style>
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+  </style>
+  <link rel="stylesheet" href="main.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">zxingcpp(n) | zxingcpp user documentation</h1>
+</header>
+<h1 id="name">NAME</h1>
+<p>zxingcpp - Decode barcode symbolgies present in images using the
+zint-cpp library.</p>
+<h1 id="synopsis">SYNOPSIS</h1>
+<p>package require zxingcpp <span class="cmd">::zxingcpp::formats</span>
+<span class="optarg">special</span></p>
+<p><span class="cmd">::zxingcpp::decode</span> <span
+class="arg">photoetc</span> <span class="optdot">opt value</span></p>
+<p><span class="cmd">::zxingcpp::async_decode</span> <span
+class="arg">photoetc</span> <span class="arg">callback</span> <span
+class="optdot">opt value</span></p>
+<p><span class="cmd">::zxingcpp::async_decode</span> <span
+class="sub">status</span></p>
+<p><span class="cmd">::zxingcpp::async_decode</span> <span
+class="sub">stop</span></p>
+<h1 id="description">DESCRIPTION</h1>
+<p>Pixel image data is analysed for barcode symbols. Detected barcode
+symbols are decoded and the data and properties are returned.</p>
+<p>This package highly uses the names used in the <a
+href="https://github.com/zxing-cpp/zxing-cpp">zxing-cpp</a> library and
+exposes its C interface to TCL. In addition, the <a
+href="https://www.androwish.org/home/wiki?name=zbar+command">zbar</a>
+interface is used within this package.</p>
+<p>The package may be used with or without Tk. If Tk is not present, the
+input format of a tk photo is not available. If Tcl (8.6) was build
+without thread support, the background decode is not available.
+Supported Tcl versions are 8.6 to 9.</p>
+<hr />
+<dl>
+<dt><span class="cmd">::zxingcpp::formats</span> <span
+class="optarg">special</span></dt>
+<dd>
+Return the list of supported formats. <strong>Formats</strong> is the
+zint-cpp term for bar code symbologies. The optional boolean command
+switch [special]{optarg} (default: false) allows to include the special
+format names <strong>Any</strong>, <strong>LinearCodes</strong> and
+<strong>MatrixCodes</strong>.
+</dd>
+</dl>
+<hr />
+<dl>
+<dt><span class="cmd">::zxingcpp::decode</span> <span
+class="arg">photoetc</span> <span class="optdot">opt value</span></dt>
+<dd>
+<p>Decode an image and return decode result. The arguments are:</p>
+<dl>
+<dt><span class="arg">photoetc</span></dt>
+<dd>
+image specification. <em>photoetc</em> may be in two formats. The first
+format is a <strong>tk image photo name</strong>. The second format is a
+list describing a greyscale or RGB image with 8 bits per color
+component. The list consists of the 4 elements <em>width</em>,
+<em>height</em>, <em>number</em> and <em>data</em>. <em>number</em> is
+the pixel byte length and may be 1 for greyscale or 3 for an RGB image.
+<em>data</em> is a byte array containing the image data.
+</dd>
+</dl>
+<p>Note that not all photo pixel formats are supported, as Tk has a
+relatively loose memory organisation. In practice, no issue was found.
+An eventual error message will inform about the incompatible format.</p>
+<dl>
+<dt><span class="optdot">opt value</span></dt>
+<dd>
+decoder options described as alternating key and value items. Keys may
+be abbreviated. The following keys are supported:
+</dd>
+</dl>
+<ul>
+<li><p><strong>Binarizer</strong>: There are 4 binarizer available:
+<strong>LocalAverage</strong> (default),
+<strong>GlobalHistogram</strong>, <strong>FixedThreshold</strong> or
+<strong>BoolCast</strong>.</p></li>
+<li><p><strong>EanAddOnSymbol</strong>: There are 3 option values
+available to handle EAN add-on bars:</p>
+<ul>
+<li><strong>Ignore</strong> (default): ignore any bar</li>
+<li><strong>Read</strong>: return if present</li>
+<li><strong>Require</strong>: only read EAN with add-on bars</li>
+</ul></li>
+<li><p><strong>Formats</strong>: List of formats activated for this
+decode. Any return value of [::zxingcpp::formats] may be given as a list
+item.</p></li>
+<li><p><strong>IsPure</strong>: Boolean parameter with default value
+<em>false</em>. Is it a pure code/image.</p></li>
+<li><p><strong>MaxNumberOfSymbols</strong>: Number 0-255 with default
+value of 255. Maximum number of returned code dicts. Remark, that an
+errorneous result may be returned twice.</p></li>
+<li><p><strong>MinLineCount</strong>: Number with default value of 2.
+Minimum line count of multi-line symbologies like PDF417 and
+DataBar.</p></li>
+<li><p><strong>ReturnErrors</strong>: Boolean parameter with default
+value <em>false</em>. If true, additional checks are performed like a
+GTIN checksum. An additional code containing the errorType key.</p></li>
+<li><p><strong>TextMode</strong>: The following modes are available for
+the format of the <em>Text</em> return key data. As an example, the
+result for a code only containing a binary 0 is given.</p>
+<ul>
+<li><strong>Plain</strong> : verbatim code data (copy of the return key
+<em>bytes</em>). Example content: binary 0</li>
+<li><strong>ECI</strong> : data in ECI format (copy of the return key
+<em>bytesECI</em>). Example content: ]C0\000026, followed by a binary
+0</li>
+<li><strong>HRI</strong> (default): Readable text-only string. Example
+content: <NUL></li>
+<li><strong>Hex</strong> : Hexadecimal encoding. Example content:
+00</li>
+<li><strong>Escaped</strong> : Textual representation for control and
+special characters. Example content: <NUL></li>
+</ul></li>
+<li><p><strong>TryDownscale</strong>: Boolean parameter with default
+value <em>true</em>. In addition, work on a downscaled image.</p></li>
+<li><p><strong>TryHarder</strong>: Boolean parameter with default value
+<em>true</em>. Additional decoding functions are added requiring more
+time.</p></li>
+<li><p><strong>TryInvert</strong>: Boolean parameter with default value
+<em>true</em>. Also try inverted code symbols.</p></li>
+<li><p><strong>TryRotate</strong>: Boolean parameter with default value
+<em>true</em>. Also try rotated code symbols.</p></li>
+</ul>
+<p>The return value is a list of 1 to 256 elements. The first element is
+the computation time in milliseconds. Any following list element is a
+result dict of a decoded code symbol. No symbols were found, if there
+are no following list elements.</p>
+<p>A result dict may have the following keys. The given example text is
+an EAN 13 symbol with a wrong checksum within the data. The option
+<em>ReturnError</em> was specified as true:</p>
+<ul>
+<li><strong>text</strong>: returned data in the format given by the
+option [TextMode]. Example: 6711881250884</li>
+<li><strong>format</strong>: detected symbology. A string as returned by
+[::zxingcpp::formats] Example: EAN-13</li>
+<li><strong>bytes</strong>: Raw data contents Example:
+6711881250884</li>
+<li><strong>bytesECI</strong>: symbology identifier followed by
+(evetually codepage transformed) data. Example: ]E06711881250884</li>
+<li><strong>content</strong>: Type of content. May be one of: Text,
+Binary, Mixed, GS1, ISO15434 or UnknownECI. Example: Text</li>
+<li><strong>symbologyIdentifier</strong>: ISO/IEC 15424 symbology
+identifier Example: ]E0</li>
+<li><strong>hasECI</strong>: flag, if an ECI was present within the data
+Example: 0</li>
+<li><strong>ecLevel</strong>: Level of error correction for suitable
+codes like QR-Code Example: empty string</li>
+<li><strong>position</strong>: List of symbol location coordinates:
+topLeft.x, topLeft.y, topRight.x, topRight.y, bottomRight.x
+bottomRight.y, bottomLeft.x and bottomLeft.y. Example: 24 36 189 36 189
+40 24 40}</li>
+<li><strong>orientation</strong>: rotation of the code symbol 0-359,
+clockwise in degrees. Example: 0</li>
+<li><strong>isMirrored</strong>: true for mirrored symbol Example:
+0</li>
+<li><strong>isInverted</strong>: true for inverted symbol Example:
+0</li>
+<li><strong>errorType</strong>: type of error. This key may arise, if
+option <em>ReturnError</em> is true and a data error happened. Possible
+values are: None, Format, Checksum, Unsupported Example: Checksum</li>
+<li><strong>errorMsg</strong>: error message. Present, if errorType is
+present. Example: ChecksumError @ ODMultiUPCEANReader.cpp:283</li>
+</ul>
+</dd>
+</dl>
+<hr />
+<dl>
+<dt><span class="cmd">::zxingcpp::async_decode</span> <span
+class="arg">photoetc</span> <span class="arg">callback</span> <span
+class="optdot">opt value</span></dt>
+<dd>
+<p>This command starts a decode using a background thread and reports
+the result using a callback. It requires the Tcl core being built with
+thread support, and a running event loop since the callback is invoked
+as an event or do-when-idle handler.</p>
+<p>Only a single thread instance is supported per Tcl interpreter,
+i.e. another asynchronous decode process can only be started when a
+previous decode process has finished. An error is raised, if a decode is
+still running.</p>
+<p>The arguments are as follows:</p>
+<dl>
+<dt><span class="arg">photoetc</span></dt>
+<dd>
+as described for [::zxingcpp::decode]
+</dd>
+<dt><span class="arg">callback</span></dt>
+<dd>
+A command prefix called when the decoding is finished. The arguments
+<em>time</em> and as many <em>result dicts</em> as detected code symbols
+are appended to the command prefix.
+</dd>
+<dt><span class="optdot">opt value</span></dt>
+<dd>
+as described for [::zxingcpp::decode]
+</dd>
+</dl>
+</dd>
+<dt><span class="cmd">::zxingcpp::async_decode</span> <span
+class="sub">status</span></dt>
+<dd>
+Returns the current state of the asynchronous decode thread as a string:
+<em>stopped</em> when no asynchronous decode thread has been started,
+<em>running</em> when a asynchronous decode is in progress, and
+<em>ready</em> when the next asynchronous decode can be started.
+</dd>
+<dt><span class="cmd">::zxingcpp::async_decode</span> <span
+class="sub">stop</span></dt>
+<dd>
+Stops the background thread for asynchronous decoding if it has been
+implicitely started by a prior [zxingcpp::async_decode]. This can be
+useful to conserve memory resources.
+</dd>
+</dl>
+<h1 id="webcam-decoder">WEBCAM DECODER</h1>
+<p>A webcam reader could be implemented as described for zbar in the
+androwish/undroidwish sample file <a
+href="https://www.androwish.org/home/file?name=assets/zbartool0/zbartool.tcl&amp;ci=tip">zbartool.tcl</a>.</p>
+<h1 id="credits">CREDITS</h1>
+<p>Christian Werner for the framework, which was copied from zbar TCL
+interface</p>
+<h1 id="dependencies">DEPENDENCIES</h1>
+<p>Tcl &gt;= 8.6.0</p>
+</body>
+</html>
