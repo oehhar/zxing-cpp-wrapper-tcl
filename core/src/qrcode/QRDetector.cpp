@@ -43,7 +43,7 @@ PatternView FindPattern(const PatternView& view)
 {
 	return FindLeftGuard<PATTERN.size()>(view, PATTERN.size(), [](const PatternView& view, int spaceInPixel) {
 		// perform a fast plausability test for 1:1:3:1:1 pattern
-		if (view[2] < 2 * std::max(view[0], view[4]) || view[2] < std::max(view[1], view[3]))
+		if (view[2] < 3 || view[2] < 2 * std::max(view[0], view[4]) || view[2] < std::max(view[1], view[3]))
 			return 0.;
 		return IsPattern<E2E>(view, PATTERN, spaceInPixel, 0.1); // the requires 4, here we accept almost 0
 	});
@@ -385,7 +385,7 @@ DetectorResult SampleQR(const BitMatrix& image, const FinderPatternSet& fp)
 	}
 
 	// otherwise the simple estimation used by upstream is used as a best guess fallback
-	if (!image.isIn(br)) {
+	if (!image.isIn(br) || !FitSquareToPoints(image, fp.bl, fp.bl.size, 2, false)) {
 		br = fp.tr - fp.tl + fp.bl;
 		brOffset = PointF(0, 0);
 	}
@@ -404,7 +404,9 @@ DetectorResult SampleQR(const BitMatrix& image, const FinderPatternSet& fp)
 			dimension = version->dimension();
 			mod2Pix = Mod2Pix(dimension, brOffset, {fp.tl, fp.tr, br, fp.bl});
 		}
-#if 1
+
+#if 1 // finding and evaluating the alignment patterns to enable a tiled sampling of the symbol
+
 		auto& apM = version->alignmentPatternCenters(); // alignment pattern positions in modules
 		auto apP = Matrix<std::optional<PointF>>(Size(apM), Size(apM)); // found/guessed alignment pattern positions in pixels
 		const int N = Size(apM) - 1;

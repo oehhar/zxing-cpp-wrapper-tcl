@@ -8,6 +8,7 @@
 
 #include "DecoderResult.h"
 #include "DetectorResult.h"
+#include "JSON.h"
 #include "ZXAlgorithms.h"
 
 #ifdef ZXING_EXPERIMENTAL_API
@@ -52,6 +53,7 @@ Result::Result(DecoderResult&& decodeResult, DetectorResult&& detectorResult, Ba
 	  _readerInit(decodeResult.readerInit())
 #ifdef ZXING_EXPERIMENTAL_API
 	  , _symbol(std::make_shared<BitMatrix>(std::move(detectorResult).bits()))
+	  , _json(std::move(decodeResult).json())
 #endif
 {
 	if (decodeResult.versionNumber())
@@ -160,23 +162,28 @@ void Result::zint(unique_zint_symbol&& z)
 {
 	_zint = std::shared_ptr(std::move(z));
 }
+
+std::string Result::extra(std::string_view key) const
+{
+	return _json.empty() ? "" : key.empty() ? "{" + _json.substr(0, _json.size() - 1) + "}" : std::string(JsonGetStr(_json, key));
+}
 #endif
 
 bool Result::operator==(const Result& o) const
 {
-	// handle case where both are MatrixCodes first
-	if (!BarcodeFormats(BarcodeFormat::LinearCodes).testFlags(format() | o.format())) {
-		if (format() != o.format() || (bytes() != o.bytes() && isValid() && o.isValid()))
+	if (format() != o.format())
+		return false;
+
+	// handle MatrixCodes first
+	if (!IsLinearBarcode(format())) {
+		if (bytes() != o.bytes() && isValid() && o.isValid())
 			return false;
 
 		// check for equal position if both are valid with equal bytes or at least one is in error
 		return IsInside(Center(o.position()), position());
 	}
 
-	if (format() != o.format() || bytes() != o.bytes() || error() != o.error())
-		return false;
-
-	if (orientation() != o.orientation())
+	if (bytes() != o.bytes() || error() != o.error() || orientation() != o.orientation())
 		return false;
 
 	if (lineCount() > 1 && o.lineCount() > 1)

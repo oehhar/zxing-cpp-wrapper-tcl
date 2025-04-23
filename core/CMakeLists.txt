@@ -103,6 +103,8 @@ set (COMMON_FILES
     src/CharacterSet.cpp
     src/Content.h
     src/Content.cpp
+    src/DecoderResult.h
+    src/DetectorResult.h
     src/ECI.h
     src/ECI.cpp
     src/Error.h
@@ -111,6 +113,8 @@ set (COMMON_FILES
     src/GTIN.h
     src/GTIN.cpp
     src/ImageView.h
+    src/JSON.h
+    src/JSON.cpp
     src/Matrix.h
     src/Point.h
     src/Quadrilateral.h
@@ -156,8 +160,6 @@ if (ZXING_READERS)
         src/ConcentricFinder.cpp
         src/DecodeHints.h
         $<$<BOOL:${BUILD_SHARED_LIBS}>:src/DecodeHints.cpp> # [[deprecated]]
-        src/DecoderResult.h
-        src/DetectorResult.h
         src/GlobalHistogramBinarizer.h
         src/GlobalHistogramBinarizer.cpp
         src/GridSampler.h
@@ -220,6 +222,7 @@ set (PUBLIC_HEADERS
     src/ImageView.h
     src/Point.h
     src/Quadrilateral.h
+    src/Range.h # re-evaluate for 3.0
     src/ReadBarcode.h
     src/ReaderOptions.h
     src/StructuredAppend.h
@@ -240,7 +243,6 @@ if (ZXING_WRITERS_OLD)
     set (PUBLIC_HEADERS ${PUBLIC_HEADERS}
         src/BitMatrix.h
         src/BitMatrixIO.h
-        src/Range.h
         src/Matrix.h
         src/MultiFormatWriter.h
     )
