@@ -2,7 +2,7 @@ zxing_add_package_stb()
 
 include (GNUInstallDirs)
 
-if (ZXING_WRITERS)
+if (ZXING_WRITERS AND ZXING_ENABLE_QRCODE)
     add_executable (ZXingWriter ZXingWriter.cpp)
 
     target_link_libraries (ZXingWriter ZXing::ZXing stb::stb)
@@ -18,6 +18,7 @@ if (ZXING_READERS)
     target_link_libraries (ZXingReader ZXing::ZXing stb::stb)
 
     add_test(NAME ZXingReaderTest COMMAND ZXingReader -fast -format qrcode test.png) # see above
+    set_tests_properties(ZXingReaderTest PROPERTIES DEPENDS ZXingWriterTest)
 
     install(TARGETS ZXingReader DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()
@@ -34,11 +35,37 @@ if (ZXING_READERS)
     if (TARGET Qt::Gui)
         add_executable (ZXingQtReader ZXingQtReader.cpp ZXingQtReader.h)
         target_link_libraries(ZXingQtReader ZXing::ZXing Qt::Gui)
+        target_compile_definitions(ZXingQtReader
+            PRIVATE
+                QT_NO_KEYWORDS
+                QT_NO_CAST_TO_ASCII
+                QT_NO_CAST_FROM_ASCII
+                QT_STRICT_ITERATORS
+                QT_NO_URL_CAST_FROM_STRING
+                QT_NO_CAST_FROM_BYTEARRAY
+                QT_USE_QSTRINGBUILDER
+                QT_NO_SIGNALS_SLOTS_KEYWORDS
+                QT_USE_FAST_OPERATOR_PLUS
+                QT_DISABLE_DEPRECATED_BEFORE=0x060400
+        )
     endif()
 
     if (TARGET Qt::Multimedia AND TARGET Qt::Quick)
         add_executable(ZXingQtCamReader ZXingQtCamReader.cpp ZXingQtCamReader.qrc ZXingQtReader.h)
         target_link_libraries(ZXingQtCamReader ZXing::ZXing Qt::Gui Qt::Multimedia Qt::Quick)
+        target_compile_definitions(ZXingQtCamReader
+            PRIVATE
+                QT_NO_KEYWORDS
+                QT_NO_CAST_TO_ASCII
+                QT_NO_CAST_FROM_ASCII
+                QT_STRICT_ITERATORS
+                QT_NO_URL_CAST_FROM_STRING
+                QT_NO_CAST_FROM_BYTEARRAY
+                QT_USE_QSTRINGBUILDER
+                QT_NO_SIGNALS_SLOTS_KEYWORDS
+                QT_USE_FAST_OPERATOR_PLUS
+                QT_DISABLE_DEPRECATED_BEFORE=0x060400
+        )
     endif()
 
     find_package(OpenCV QUIET)

@@ -6,12 +6,14 @@
 
 #include "QRDecoder.h"
 
+#ifdef ZXING_EXPERIMENTAL_API
+#include "Barcode.h"
+#endif
 #include "BitMatrix.h"
 #include "BitSource.h"
 #include "CharacterSet.h"
 #include "DecoderResult.h"
 #include "GenericGF.h"
-#include "JSON.h"
 #include "QRBitMatrixParser.h"
 #include "QRCodecMode.h"
 #include "QRDataBlock.h"
@@ -118,17 +120,14 @@ static char ToAlphaNumericChar(int value)
 	/**
 	* See ISO 18004:2006, 6.4.4 Table 5
 	*/
-	static const char ALPHANUMERIC_CHARS[] = {
+	constexpr std::array ALPHANUMERIC_CHARS = {
 		'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B',
 		'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N',
 		'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
 		' ', '$', '%', '*', '+', '-', '.', '/', ':'
 	};
 
-	if (value < 0 || value >= Size(ALPHANUMERIC_CHARS))
-		throw std::out_of_range("ToAlphaNumericChar: out of range");
-
-	return ALPHANUMERIC_CHARS[value];
+	return ALPHANUMERIC_CHARS.at(value);
 }
 
 static void DecodeAlphanumericSegment(BitSource& bits, int count, Content& result)
@@ -370,7 +369,11 @@ DecoderResult Decode(const BitMatrix& bits)
 	// Decode the contents of that stream of bytes
 	auto ret = DecodeBitStream(std::move(resultBytes), version, formatInfo.ecLevel)
 		.setIsMirrored(formatInfo.isMirrored)
-		.setJson(JsonValue("DataMask", formatInfo.dataMask) + JsonValue("Version", versionStr));
+#ifdef ZXING_EXPERIMENTAL_API
+		.addExtra(BarcodeExtra::DataMask, formatInfo.dataMask, uint8_t(255))
+		.addExtra(BarcodeExtra::Version, versionStr)
+#endif
+		;
 	if (error)
 		ret.setError(error);
 	return ret;

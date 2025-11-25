@@ -31,7 +31,7 @@ struct SymbologyIdentifier
 	std::string toString(bool hasECI = false) const
 	{
 		int modVal = (modifier >= 'A' ? modifier - 'A' + 10 : modifier - '0') + eciModifierOffset * hasECI;
-		return code ? ']' + std::string(1, code) + static_cast<char>((modVal >= 10 ? 'A' - 10 : '0') + modVal) : std::string();
+		return code ? StrCat(']', code, static_cast<char>((modVal >= 10 ? 'A' - 10 : '0') + modVal)) : std::string();
 	}
 };
 
@@ -52,6 +52,9 @@ public:
 
 	ByteArray bytes;
 	std::vector<Encoding> encodings;
+#if !defined(ZXING_READERS) && defined(ZXING_EXPERIMENTAL_API) && defined(ZXING_USE_ZINT)
+	std::vector<std::string> utf8Cache;
+#endif
 	SymbologyIdentifier symbology;
 	CharacterSet defaultCharset = CharacterSet::Unknown;
 	bool hasECI = false;
