@@ -32,6 +32,8 @@ PRJ_OBJS = \
 
 # Define any additional compiler flags that might be required for the project
 PRJ_DEFINES = -D_CRT_SECURE_NO_DEPRECATE
+# Inform, that zxing-cpp experimental API is used.
+PRJ_DEFINES = $(PRJ_DEFINES) -DZXING_EXPERIMENTAL_API
 PRJ_DEFINES = $(PRJ_DEFINES) -I$(TMP_DIR) -I..\..\..\core\src
 
 # Required libraries

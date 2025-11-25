@@ -2,7 +2,7 @@
 * Copyright 2023 siiky
 * Copyright 2023 Axel Waggershauser
 * Copyright 2024 Christian Werner
-* Copyright 2024 Harald Oehlmann
+* Copyright 2024-2025 Harald Oehlmann
 */
 // SPDX-License-Identifier: Apache-2.0
 
@@ -146,14 +146,20 @@ ReaderOptionsGet(Tcl_Interp *interp, int objc, Tcl_Obj *const objv[], ZXing_Read
 {
     int option;
     const char *options[] = {
+#ifdef ZXING_EXPERIMENTAL_API
+	"TryDenoise",
+#endif
 	"TryHarder", "TryRotate", "TryInvert", "TryDownscale",
 	"IsPure", "ReturnErrors", "Formats", "Binarizer", "EanAddOnSymbol",
 	"TextMode", "MinLineCount", "MaxNumberOfSymbols",
 	NULL};
     enum iOptions {
+#ifdef ZXING_EXPERIMENTAL_API
+	iTryDenoise,
+#endif
 	iTryHarder, iTryRotate, iTryInvert, iTryDownscale,
 	iIsPure, iReturnErrors, iFormats, iBinarizer,iEanAddOnSymbol,
-	iTextMode, iMinLineCount, iMaxNumberOfSymbols,
+	iTextMode, iMinLineCount, iMaxNumberOfSymbols
 	};
 
     /*
@@ -188,6 +194,9 @@ ReaderOptionsGet(Tcl_Interp *interp, int objc, Tcl_Obj *const objv[], ZXing_Read
 	
 	switch (option) {
 	case iTryHarder:
+#ifdef ZXING_EXPERIMENTAL_API
+	case iTryDenoise:
+#endif
 	case iTryRotate:
 	case iTryInvert:
 	case iTryDownscale:
@@ -216,6 +225,12 @@ ReaderOptionsGet(Tcl_Interp *interp, int objc, Tcl_Obj *const objv[], ZXing_Read
 		/* Default: 1 */
 	    ZXing_ReaderOptions_setTryHarder(opts, intValue);
 	    break;
+#ifdef ZXING_EXPERIMENTAL_API
+	case iTryDenoise:
+		/* Default: 0 */
+	    ZXing_ReaderOptions_setTryDenoise(opts, intValue);
+	    break;
+#endif
 	case iTryRotate:
 		/* Default: 1 */
 	    ZXing_ReaderOptions_setTryRotate(opts, intValue);
